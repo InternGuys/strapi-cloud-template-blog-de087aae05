@@ -6,4 +6,21 @@
 
 const { createCoreRouter } = require('@strapi/strapi').factories;
 
-module.exports = createCoreRouter('api::article.article');
+const defaultRouter = createCoreRouter('api::article.article');
+
+const customRoutes = {
+  routes: [
+    {
+      method: 'GET',
+      path: '/articles/:id/related',
+      handler: 'article.findRelated'
+    }
+  ]
+};
+
+module.exports = {
+  routes: [
+    ...defaultRouter.routes,
+    ...customRoutes.routes
+  ]
+};
