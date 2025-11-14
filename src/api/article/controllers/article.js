@@ -19,23 +19,43 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       return ctx.notFound('Article not found');
     }
 
-    const relatedArticles = await strapi.entityService.findMany('api::article.article', {
+    // First, get articles from the same category
+    const categoryArticles = await strapi.entityService.findMany('api::article.article', {
       filters: {
         $and: [
           { id: { $ne: id } },
-          {
-            $or: [
-              { category: { id: currentArticle.category?.id } },
-              { author: { id: currentArticle.author?.id } }
-            ]
-          }
+          { category: { id: currentArticle.category?.id } }
         ]
       },
       populate: ['cover', 'author', 'category'],
       sort: { publishedAt: 'desc' },
-      limit: parseInt(limit)
+      limit: parseInt(limit) * 2 // Get more to allow for randomization
     });
 
-    return { data: relatedArticles };
+    // If we don't have enough category articles, get articles by the same author
+    let relatedArticles = [...categoryArticles];
+    
+    if (relatedArticles.length < parseInt(limit)) {
+      const authorArticles = await strapi.entityService.findMany('api::article.article', {
+        filters: {
+          $and: [
+            { id: { $ne: id } },
+            { author: { id: currentArticle.author?.id } },
+            { id: { $notIn: relatedArticles.map(article => article.id) } }
+          ]
+        },
+        populate: ['cover', 'author', 'category'],
+        sort: { publishedAt: 'desc' },
+        limit: parseInt(limit) - relatedArticles.length
+      });
+      
+      relatedArticles = [...relatedArticles, ...authorArticles];
+    }
+
+    // Randomize and limit results
+    const shuffled = relatedArticles.sort(() => 0.5 - Math.random());
+    const finalResults = shuffled.slice(0, parseInt(limit));
+
+    return { data: finalResults };
   }
 }));
