@@ -28,7 +28,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
         ]
       },
       populate: ['cover', 'author', 'category'],
-      sort: { publishedAt: 'desc' },
+      sort: { createdAt: 'desc' },
       limit: parseInt(limit)
     });
 
@@ -45,7 +45,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
           ]
         },
         populate: ['cover', 'author', 'category'],
-        sort: { publishedAt: 'desc' },
+        sort: { createdAt: 'desc' },
         limit: parseInt(limit) - relatedArticles.length
       });
 
