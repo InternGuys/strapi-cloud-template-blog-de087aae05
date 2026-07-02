@@ -1,57 +1,91 @@
 'use strict';
 
-/**
- *  article controller
- */
-
 const { createCoreController } = require('@strapi/strapi').factories;
+
+// Fisher–Yates shuffle
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 module.exports = createCoreController('api::article.article', ({ strapi }) => ({
   async findRelated(ctx) {
     const { id } = ctx.params;
-    const { limit = 3 } = ctx.query;
+    const target = parseInt(ctx.query.limit) || 3;
 
     const currentArticle = await strapi.entityService.findOne('api::article.article', id, {
-      populate: ['category', 'author']
+      populate: ['category', 'author'],
     });
 
     if (!currentArticle) {
       return ctx.notFound('Article not found');
     }
 
-    // First, get articles from the same category
-    const categoryArticles = await strapi.entityService.findMany('api::article.article', {
-      filters: {
-        $and: [
-          { id: { $ne: id } },
-          { category: { id: currentArticle.category?.id } }
-        ]
-      },
-      populate: ['cover', 'author', 'category'],
-      sort: { createdAt: 'desc' },
-      limit: parseInt(limit)
-    });
+    const categoryId = currentArticle.category?.id;
+    const company = (currentArticle.title || '').trim().split(' ')[0];
 
-    // If we don't have enough category articles, get articles by the same author
-    let relatedArticles = [...categoryArticles];
+    const collected = [];
+    const seen = new Set([Number(id)]);
+    const populate = ['cover', 'author', 'category'];
 
-    if (relatedArticles.length < parseInt(limit)) {
-      const authorArticles = await strapi.entityService.findMany('api::article.article', {
+    const add = (articles) => {
+      for (const a of articles) {
+        if (collected.length >= target) break;
+        if (seen.has(a.id)) continue;
+        seen.add(a.id);
+        collected.push(a);
+      }
+    };
+
+    // Bucket 1: 2 newest in the same category
+    if (categoryId) {
+      const newest = await strapi.entityService.findMany('api::article.article', {
+        filters: { $and: [{ id: { $ne: id } }, { category: { id: categoryId } }] },
+        populate,
+        sort: { createdAt: 'desc' },
+        limit: 2,
+      });
+      add(newest);
+    }
+
+    // Bucket 2: up to 2 from the same company (any category)
+    if (company) {
+      const companyArticles = await strapi.entityService.findMany('api::article.article', {
         filters: {
           $and: [
             { id: { $ne: id } },
-            { author: { id: currentArticle.author?.id } },
-            { id: { $notIn: relatedArticles.map(article => article.id) } }
-          ]
+            { title: { $startsWith: company } },
+            { id: { $notIn: Array.from(seen) } },
+          ],
         },
-        populate: ['cover', 'author', 'category'],
+        populate,
         sort: { createdAt: 'desc' },
-        limit: parseInt(limit) - relatedArticles.length
+        limit: 2,
       });
-
-      relatedArticles = [...relatedArticles, ...authorArticles];
+      add(companyArticles);
     }
 
-    return { data: relatedArticles.slice(0, parseInt(limit)) };
-  }
+    // Bucket 3: fill remaining slots with random articles from the same category
+    if (categoryId && collected.length < target) {
+      const pool = await strapi.entityService.findMany('api::article.article', {
+        filters: {
+          $and: [
+            { id: { $ne: id } },
+            { category: { id: categoryId } },
+            { id: { $notIn: Array.from(seen) } },
+          ],
+        },
+        populate,
+        sort: { createdAt: 'desc' },
+        limit: 30, // recent-ish pool to randomize from
+      });
+      add(shuffle(pool));
+    }
+
+    return { data: collected.slice(0, target) };
+  },
 }));
