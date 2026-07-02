@@ -29,12 +29,12 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       },
       populate: ['cover', 'author', 'category'],
       sort: { publishedAt: 'desc' },
-      limit: parseInt(limit) * 2 // Get more to allow for randomization
+      limit: parseInt(limit)
     });
 
     // If we don't have enough category articles, get articles by the same author
     let relatedArticles = [...categoryArticles];
-    
+
     if (relatedArticles.length < parseInt(limit)) {
       const authorArticles = await strapi.entityService.findMany('api::article.article', {
         filters: {
@@ -48,14 +48,10 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
         sort: { publishedAt: 'desc' },
         limit: parseInt(limit) - relatedArticles.length
       });
-      
+
       relatedArticles = [...relatedArticles, ...authorArticles];
     }
 
-    // Randomize and limit results
-    const shuffled = relatedArticles.sort(() => 0.5 - Math.random());
-    const finalResults = shuffled.slice(0, parseInt(limit));
-
-    return { data: finalResults };
+    return { data: relatedArticles.slice(0, parseInt(limit)) };
   }
 }));
