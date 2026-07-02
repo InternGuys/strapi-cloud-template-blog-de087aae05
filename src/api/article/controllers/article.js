@@ -2,7 +2,6 @@
 
 const { createCoreController } = require('@strapi/strapi').factories;
 
-// Fisher–Yates shuffle
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -14,7 +13,7 @@ function shuffle(arr) {
 
 module.exports = createCoreController('api::article.article', ({ strapi }) => ({
   async findRelated(ctx) {
-    const { id } = ctx.params;
+    const id = Number(ctx.params.id);
     const target = parseInt(ctx.query.limit) || 3;
 
     const currentArticle = await strapi.entityService.findOne('api::article.article', id, {
@@ -27,16 +26,21 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
 
     const categoryId = currentArticle.category?.id;
     const company = (currentArticle.title || '').trim().split(' ')[0];
+    const currentTitle = (currentArticle.title || '').trim().toLowerCase();
 
     const collected = [];
-    const seen = new Set([Number(id)]);
+    const seen = new Set([id]);
+    const seenTitles = new Set([currentTitle]);
     const populate = ['cover', 'author', 'category'];
 
     const add = (articles) => {
       for (const a of articles) {
         if (collected.length >= target) break;
         if (seen.has(a.id)) continue;
+        const t = (a.title || '').trim().toLowerCase();
+        if (seenTitles.has(t)) continue;   // title-level dedup safety net
         seen.add(a.id);
+        seenTitles.add(t);
         collected.push(a);
       }
     };
@@ -44,7 +48,7 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
     // Bucket 1: 2 newest in the same category
     if (categoryId) {
       const newest = await strapi.entityService.findMany('api::article.article', {
-        filters: { $and: [{ id: { $ne: id } }, { category: { id: categoryId } }] },
+        filters: { $and: [{ id: { $notIn: Array.from(seen) } }, { category: { id: categoryId } }] },
         populate,
         sort: { createdAt: 'desc' },
         limit: 2,
@@ -57,9 +61,8 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       const companyArticles = await strapi.entityService.findMany('api::article.article', {
         filters: {
           $and: [
-            { id: { $ne: id } },
-            { title: { $startsWith: company } },
             { id: { $notIn: Array.from(seen) } },
+            { title: { $startsWith: company } },
           ],
         },
         populate,
@@ -69,19 +72,18 @@ module.exports = createCoreController('api::article.article', ({ strapi }) => ({
       add(companyArticles);
     }
 
-    // Bucket 3: fill remaining slots with random articles from the same category
+    // Bucket 3: fill remaining with random articles from the same category
     if (categoryId && collected.length < target) {
       const pool = await strapi.entityService.findMany('api::article.article', {
         filters: {
           $and: [
-            { id: { $ne: id } },
-            { category: { id: categoryId } },
             { id: { $notIn: Array.from(seen) } },
+            { category: { id: categoryId } },
           ],
         },
         populate,
         sort: { createdAt: 'desc' },
-        limit: 30, // recent-ish pool to randomize from
+        limit: 30,
       });
       add(shuffle(pool));
     }
