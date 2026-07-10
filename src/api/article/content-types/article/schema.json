@@ -44,6 +44,20 @@
     "blocks": {
       "type": "dynamiczone",
       "components": ["shared.media", "shared.quote", "shared.rich-text", "shared.slider"]
+    },
+    "layout": {
+      "type": "enumeration",
+      "enum": ["guide", "study"],
+      "default": "guide"
+    },
+    "footerVariant": {
+      "type": "enumeration",
+      "enum": ["default", "study", "minimal"],
+      "default": "default"
+    },
+    "showHeroCta": {
+      "type": "boolean",
+      "default": true
     }
   }
 }
